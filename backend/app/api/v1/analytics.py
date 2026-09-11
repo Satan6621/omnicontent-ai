@@ -38,7 +38,7 @@ async def get_analytics(period_days: int = 7, db: Session = Depends(get_db)):
                 agg["failed"] += 1
             if r.published_at:
                 if agg["last"] is None or r.published_at > agg["last"]:
-                    agg["last"] = r.published_at.isoformat()
+                    agg["last"] = r.published_at
 
     summary = PlatformAnalytics(
         total_published=sum(1 for r in rows if r.status == "published"),
