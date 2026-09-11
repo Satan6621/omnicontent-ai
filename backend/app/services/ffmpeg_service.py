@@ -101,7 +101,7 @@ def render_vertical_video(
 
     preset = "veryfast" if low_memory else "medium"
     crf = "25" if low_memory else "21"
-    threads = "-threads", "1" if low_memory else "-threads", "0"
+    threads = ("-threads", "1") if low_memory else ("-threads", "0")
 
     cmd = ["ffmpeg", "-y"]
     cmd.extend(inputs)
