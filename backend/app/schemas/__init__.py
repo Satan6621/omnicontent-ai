@@ -18,6 +18,10 @@ from app.schemas.content import (
     VideoJobListResponse,
     VideoJobResponse,
     VideoScriptRequest,
+    WEBHOOK_EVENT_TYPES,
+    WebhookCreateRequest,
+    WebhookResponse,
+    WebhookUpdateRequest,
 )
 
 __all__ = [
@@ -40,4 +44,8 @@ __all__ = [
     "VideoJobListResponse",
     "VideoJobResponse",
     "VideoScriptRequest",
+    "WEBHOOK_EVENT_TYPES",
+    "WebhookCreateRequest",
+    "WebhookResponse",
+    "WebhookUpdateRequest",
 ]
