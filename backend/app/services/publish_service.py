@@ -151,7 +151,13 @@ def _execute_publish(
     # Normalizar video_url a URL absoluta
     if video_url and not video_url.startswith("http"):
         s = get_settings()
-        video_url = f"{s.public_media_base_url.rstrip('/')}/{video_url.replace(chr(92), '/').lstrip('/')}"
+        clean = video_url.replace(chr(92), "/")
+        # Si es un path absoluto del contenedor, quedarse con la parte relativa al media root
+        if "/media/" in clean:
+            clean = clean.split("/media/", 1)[1]
+        elif clean.startswith("/"):
+            clean = clean.lstrip("/")
+        video_url = f"{s.public_media_base_url.rstrip('/')}/{clean.lstrip('/')}"
 
     effective_platforms = [p for p in platforms if not exclude_networks or p not in exclude_networks]
     if not effective_platforms:

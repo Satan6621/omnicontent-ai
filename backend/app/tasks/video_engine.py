@@ -173,10 +173,16 @@ def process_video_job(job_id: int, voice: str | None = None, visual_style: str =
                 storage_url = None
 
             # ── 8. Complete ────────────────────────────
+            rel_path = Path(output_path).resolve()
+            root = Path(MEDIA_ROOT).resolve()
+            try:
+                web_path = rel_path.relative_to(root).as_posix()  # videos/job_X/job_X.mp4
+            except ValueError:
+                web_path = rel_path.name  # fallback: solo el nombre
             job.video_path = output_path
             job.storage_url = storage_url
             job.duration_seconds = int(audio_duration)
-            job.status_detail = "Completed"
+            job.status_detail = "Completed (rendered)"
             upd.step(100, "Completed", JobStatus.COMPLETED)
 
             # ── 9. Auto-publicación (F2) ───────────────
@@ -189,7 +195,7 @@ def process_video_job(job_id: int, voice: str | None = None, visual_style: str =
                         content=content,
                         platforms=list(job.publish_platforms),
                         hashtags=job.publish_hashtags or "",
-                        video_url=storage_url or output_path,
+                        video_url=storage_url or web_path,  # URL pública o ruta relativa al media_root
                         source="video_job",
                     )
                     upd.step(100, "Completed + published to " + ", ".join(job.publish_platforms),
@@ -198,7 +204,7 @@ def process_video_job(job_id: int, voice: str | None = None, visual_style: str =
                     pass  # el auto-publish es best-effort
 
             return {"job_id": job_id, "status": "COMPLETED", "video_path": output_path,
-                    "storage_url": storage_url}
+                    "storage_url": storage_url or web_path}
 
         except (TTSError, FFmpegError, Exception) as e:
             job.error = str(e)[:1800]

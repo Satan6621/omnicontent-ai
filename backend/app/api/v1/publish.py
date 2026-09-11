@@ -110,17 +110,23 @@ async def retry_publish_job(job_id: int, db: Session = Depends(get_db)):
     if new_job is None:
         raise HTTPException(status_code=400, detail="No hay redes fallidas para reintentar")
 
-    db.refresh(new_job)
-    results = new_job.per_network or {}
+    # El job nuevo se creó en una sesión propia; recargarlo con la sesión del endpoint
+    db.expunge(new_job)
+    db.close()
+    refreshed = db.get(PublishJob, new_job.id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="Publish job not found")
+
+    results = refreshed.per_network or {}
     succeeded = sum(1 for o in results.values() if isinstance(o, dict) and o.get("success"))
     errors = [f"{k}: {v.get('error', 'error')}" for k, v in results.items()
               if isinstance(v, dict) and not v.get("success")]
     return PublishResponse(
         results=results,
-        requested=len(new_job.platforms),
+        requested=len(refreshed.platforms),
         succeeded=succeeded,
         errors=errors,
-        job_id=new_job.id,
+        job_id=refreshed.id,
     )
 
 
