@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+
+# Media (generated artifacts)
+backend/media/audio/*
+backend/media/images/*
+backend/media/videos/*
+!backend/media/audio/.gitkeep
+!backend/media/images/.gitkeep
+!backend/media/videos/.gitkeep
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db
+.vercel

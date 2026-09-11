@@ -1,0 +1,100 @@
+name: omnicontent-ai
+
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: omnicontent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-omnicontent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omnicontent_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-omnicontent}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omnicontent} -d ${POSTGRES_DB:-omnicontent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis-broker:
+    image: redis:7-alpine
+    container_name: omnicontent-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  fastapi-app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: omnicontent-api
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-omnicontent}:${POSTGRES_PASSWORD:-omnicontent_secret}@postgres-db:5432/${POSTGRES_DB:-omnicontent}
+      CELERY_BROKER_URL: redis://redis-broker:6379/0
+      CELERY_RESULT_BACKEND: redis://redis-broker:6379/1
+      CELERY_TASK_ALWAYS_EAGER: "false"
+    ports:
+      - "8000:8000"
+    volumes:
+      - media-data:/app/media
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-broker:
+        condition: service_healthy
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: omnicontent-worker
+    restart: unless-stopped
+    command: celery -A app.core.celery_app:celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-omnicontent}:${POSTGRES_PASSWORD:-omnicontent_secret}@postgres-db:5432/${POSTGRES_DB:-omnicontent}
+      CELERY_BROKER_URL: redis://redis-broker:6379/0
+      CELERY_RESULT_BACKEND: redis://redis-broker:6379/1
+      CELERY_TASK_ALWAYS_EAGER: "false"
+    volumes:
+      - media-data:/app/media
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-broker:
+        condition: service_healthy
+
+  nextjs-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: omnicontent-web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - fastapi-app
+
+volumes:
+  postgres-data:
+  redis-data:
+  media-data:
