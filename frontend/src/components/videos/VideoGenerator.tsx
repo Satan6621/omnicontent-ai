@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Clapperboard, Loader2, RotateCcw, Download, PencilLine, Wand2, Send } from 'lucide-react';
+import { Clapperboard, Loader2, RotateCcw, Download, PencilLine, Wand2, CalendarClock } from 'lucide-react';
 import { createVideoDraft, createVideoJob, editVideoJob, renderVideoJob, retryVideoJob } from '@/lib/api';
 import { useVideoJobPolling } from '@/hooks/useVideoJob';
 import { Button, Card, CardHeader, Input, Progress, Select, Badge, Textarea } from '@/components/ui/primitives';
@@ -15,6 +15,13 @@ const VOICES = [
 ];
 
 const STYLES = ['cinematic', 'minimalist', 'vibrant', 'corporate'];
+
+const STYLE_PRESETS = [
+  { id: 'cinematic', label: 'Cinematic' },
+  { id: 'minimalist', label: 'Minimalista' },
+  { id: 'bold_contrast', label: 'Bold Contrast' },
+  { id: 'retro', label: 'Retro' },
+];
 
 const MUSIC_STYLES = [
   { id: '', label: 'Sin música' },
@@ -36,7 +43,11 @@ export function VideoGenerator() {
   const [prompt, setPrompt] = useState('');
   const [voice, setVoice] = useState(VOICES[0].id);
   const [style, setStyle] = useState('cinematic');
+  const [stylePreset, setStylePreset] = useState('cinematic');
   const [music, setMusic] = useState('lofi');
+  // Feature 1: programar el render (datetime-local → ISO con zona)
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   // F5: draft/edición de script
   const [draftScript, setDraftScript] = useState('');
   const [editing, setEditing] = useState(false);
@@ -71,7 +82,7 @@ export function VideoGenerator() {
     }
   };
 
-  // F2 + F5: guardar editado y renderizar
+  // F2 + F5 + Feature 1: guardar editado y renderizar (inmediato o programado)
   const render = async () => {
     if (!jobId || !draftScript.trim()) {
       setError('Primero genera el guion');
@@ -87,9 +98,19 @@ export function VideoGenerator() {
         publish_platforms: autoPublish ? nets : [],
         publish_content: prompt.trim(),
         publish_hashtags: '#shorts #viral',
+        visual_style: style,
+        music_style: music || null,
+        voice,
+        style_preset: stylePreset,
+        scheduled_for: scheduledFor,
       });
-      const r = await renderVideoJob(jobId);
-      setJobId(r.id);
+      if (!scheduledFor) {
+        const r = await renderVideoJob(jobId);
+        setJobId(r.id);
+        setError('');
+      } else {
+        setError('');
+      }
       setEditing(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error renderizando');
@@ -177,6 +198,41 @@ export function VideoGenerator() {
               onChange={(e) => setDraftScript(e.target.value)}
               className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm"
             />
+            {/* F2 + Feature 2: auto-publicar al completar + preset de estilo */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Preset de subtítulos</label>
+                <Select value={stylePreset} onChange={(e) => setStylePreset(e.target.value)}>
+                  {STYLE_PRESETS.map((s) => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Programar render (opcional)</label>
+                <Input
+                  type="datetime-local"
+                  value={scheduleTime}
+                  onChange={(e) => {
+                    setScheduleTime(e.target.value);
+                    setScheduledFor(
+                      e.target.value
+                        ? new Date(e.target.value).toISOString()
+                        : null
+                    );
+                  }}
+                />
+                {scheduledFor && (
+                  <p className="mt-1 text-[11px] text-violet-400">
+                    Se renderizará automáticamente el{' '}
+                    {new Date(scheduledFor).toLocaleString('es', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </p>
+                )}
+              </div>
+            </div>
             {/* F2: auto-publicar al completar */}
             <label className="flex items-center gap-2 text-xs text-zinc-400">
               <input
@@ -207,10 +263,10 @@ export function VideoGenerator() {
             )}
             <div className="flex gap-2">
               <Button onClick={render} disabled={busy || isRendering}>
-                {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                Renderizar video
+                {busy ? <Loader2 size={15} className="animate-spin" /> : <CalendarClock size={15} />}
+                {scheduledFor ? 'Programar render' : 'Renderizar video'}
               </Button>
-              <Button variant="secondary" onClick={() => { setEditing(false); setDraftScript(''); }}>
+              <Button variant="secondary" onClick={() => { setEditing(false); setDraftScript(''); setScheduledFor(null); setScheduleTime(''); }}>
                 Cancelar
               </Button>
             </div>
@@ -229,6 +285,11 @@ export function VideoGenerator() {
               )}
               {job.auto_publish && (
                 <Badge tone="green">auto-publicar ON</Badge>
+              )}
+              {job.scheduled_for && (
+                <Badge tone="violet">
+                  Programado · {new Date(job.scheduled_for).toLocaleString('es', { dateStyle: 'short', timeStyle: 'short' })}
+                </Badge>
               )}
             </div>
 

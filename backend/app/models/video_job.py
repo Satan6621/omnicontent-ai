@@ -44,4 +44,16 @@ class VideoJob(Base):
     publish_content: Mapped[str] = mapped_column(Text, default="", server_default="")
     publish_hashtags: Mapped[str] = mapped_column(Text, default="", server_default="")
 
+    # ── Programación (Content Scheduler) ──
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ── Estilo de render (FFmpeg presets) ──
+    style_preset: Mapped[str] = mapped_column(String(40), default="cinematic", server_default="cinematic")
+
+    # ── Parámetros de generación persistidos (draft → edit → render) ──
+    voice: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    visual_style: Mapped[str] = mapped_column(String(60), default="cinematic", server_default="cinematic")
+    music_style: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     user: Mapped["User | None"] = relationship(back_populates="video_jobs")

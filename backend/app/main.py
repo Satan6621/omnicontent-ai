@@ -15,7 +15,14 @@ from app.api import api_v1_router
 from app.core.config import get_settings
 from app.db.session import engine
 from app.db.base import Base
-from app.models import User, SocialPost, VideoJob  # noqa: F401 — register tables
+from app.models import (  # noqa: F401 — register tables
+    ApiKey,
+    PublishJob,
+    SocialPost,
+    User,
+    VideoJob,
+    WebhookSubscription,
+)
 
 settings = get_settings()
 
@@ -95,20 +102,25 @@ async def log_requests(request: Request, call_next):
 
 
 async def _run_due_publisher_loop():
-    """F1: en modo eager (sin Celery/Redis real), un loop ligero procesa las publicaciones
-    programadas cada 60s. Con Celery real lo hace el beat, y este loop no se ejecuta."""
+    """F1 + Content Scheduler: en modo eager (sin Celery/Redis real), un loop ligero
+    procesa las publicaciones programadas y los videos programados vencidos cada 60s.
+    Con Celery real lo hace el beat, y este loop no se ejecuta."""
     if not settings.celery_task_always_eager:
         return
-    logger.info("Eager mode: auto-publishing loop ON (scheduled posts every 60s)")
+    logger.info("Eager mode: auto-publishing + scheduler loop ON (every 60s)")
     while True:
         try:
             from app.services import publish_service as _ps
+            from app.services.scheduler_service import process_due_scheduled
 
             processed = await asyncio.to_thread(_ps.process_due_publishes)
             if processed:
                 logger.info("process_due published %d job(s): %s", len(processed), processed)
+            scheduled = await asyncio.to_thread(process_due_scheduled)
+            if scheduled.get("videos_launched") or scheduled.get("posts_marked_published"):
+                logger.info("scheduler due: %s", scheduled)
         except Exception:
-            logger.exception("process_due error")
+            logger.exception("system loops error")
         await asyncio.sleep(60)
 
 

@@ -15,6 +15,9 @@ import type {
   VideoJob,
   VideoJobListResponse,
   VideoScriptRequest,
+  WebhookCreateRequest,
+  WebhookSubscription,
+  WebhookUpdateRequest,
 } from '@/types/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -37,6 +40,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(body.detail ?? `HTTP ${res.status}`);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -113,4 +117,25 @@ export async function createApiKey(req: ApiKeyCreateRequest): Promise<ApiKeyCrea
 
 export async function deleteApiKey(id: number): Promise<void> {
   await request<unknown>(`/apikeys/${id}`, { method: 'DELETE' });
+}
+
+// ── Webhooks salientes (Feature 3) ────────────────────────
+export async function listWebhooks(): Promise<WebhookSubscription[]> {
+  return request<WebhookSubscription[]>('/webhooks');
+}
+
+export async function createWebhook(req: WebhookCreateRequest): Promise<WebhookSubscription> {
+  return request<WebhookSubscription>('/webhooks', { method: 'POST', body: JSON.stringify(req) });
+}
+
+export async function updateWebhook(id: number, req: WebhookUpdateRequest): Promise<WebhookSubscription> {
+  return request<WebhookSubscription>(`/webhooks/${id}`, { method: 'PATCH', body: JSON.stringify(req) });
+}
+
+export async function testWebhook(id: number): Promise<{ status: number; error?: string }> {
+  return request<{ status: number; error?: string }>(`/webhooks/${id}/test`, { method: 'POST' });
+}
+
+export async function deleteWebhook(id: number): Promise<void> {
+  await request<unknown>(`/webhooks/${id}`, { method: 'DELETE' });
 }

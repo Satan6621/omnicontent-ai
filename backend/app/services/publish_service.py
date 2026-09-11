@@ -96,6 +96,28 @@ def do_publish(
         job.published_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(job)
+
+        # ── Webhooks de salida (evento publish) ──
+        try:
+            from app.services.webhook_service import (
+                EVENT_PUBLISH_FAILED,
+                EVENT_PUBLISH_SUCCEEDED,
+                dispatch_event,
+            )
+
+            event = EVENT_PUBLISH_SUCCEEDED if succeeded > 0 else EVENT_PUBLISH_FAILED
+            dispatch_event(event, {
+                "event": event,
+                "job_id": job.id,
+                "status": job.status,
+                "content": content,
+                "media_url": video_url,
+                "platforms": platforms,
+                "results": job.per_network or {},
+                "timestamp": job.published_at.isoformat(),
+            })
+        except Exception:
+            pass  # webhooks son best-effort
         return job
     finally:
         db.close()

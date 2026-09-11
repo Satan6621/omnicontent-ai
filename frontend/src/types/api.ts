@@ -37,6 +37,9 @@ export interface VideoJob {
   error: string | null;
   auto_publish: boolean;
   publish_platforms: string[];
+  style_preset: string;
+  scheduled_for: string | null;
+  published_at: string | null;
   created_at: string;
 }
 
@@ -50,6 +53,8 @@ export interface VideoCreateRequest {
   voice?: string;
   visual_style?: string;
   music_style?: string | null;
+  style_preset?: string;
+  scheduled_for?: string | null;
   script?: string | null;
   auto_publish?: boolean;
   publish_platforms?: string[];
@@ -63,6 +68,11 @@ export interface VideoEditRequest {
   publish_platforms?: string[];
   publish_content?: string;
   publish_hashtags?: string;
+  visual_style?: string;
+  music_style?: string | null;
+  voice?: string;
+  style_preset?: string;
+  scheduled_for?: string | null;
 }
 
 export interface VideoScriptRequest {
@@ -168,4 +178,34 @@ export interface ApiKeyCreateResponse {
 export interface ApiKeyCreateRequest {
   name: string;
   scopes?: string[];
+}
+
+// ── Webhooks salientes (Feature 3) ────────────────────────
+export type WebhookEventType =
+  | 'video.completed'
+  | 'video.failed'
+  | 'publish.succeeded'
+  | 'publish.failed';
+
+export interface WebhookSubscription {
+  id: number;
+  url: string;
+  event_type: WebhookEventType;
+  active: boolean;
+  last_status: string | null;
+  last_sent_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export interface WebhookCreateRequest {
+  url: string;
+  event_type: WebhookEventType;
+  active?: boolean;
+}
+
+export interface WebhookUpdateRequest {
+  url?: string;
+  event_type?: WebhookEventType;
+  active?: boolean;
 }

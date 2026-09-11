@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -79,10 +80,11 @@ def _distribute_timing(segments: list[dict], total_duration: float) -> list[dict
 
 
 def process_video_job(job_id: int, voice: str | None = None, visual_style: str = "cinematic",
-                      music_style: str | None = None) -> dict:
+                      music_style: str | None = None, style_preset: str = "cinematic") -> dict:
     """Pipeline completo de generación de video (sincrónico, corre en el worker Celery).
 
     music_style: None/'' = sin música; 'ambient' | 'lofi' | 'upbeat' = música procedural.
+    style_preset: 'cinematic' | 'minimalist' | 'bold_contrast' | 'retro' (subtítulos FFmpeg).
     """
     db: Session = SessionLocal()
     try:
@@ -133,7 +135,8 @@ def process_video_job(job_id: int, voice: str | None = None, visual_style: str =
             segments = _split_script_segments(script)
             segments = _distribute_timing(segments, audio_duration)
             subs_path = str(job_dir / f"job_{job_id}.ass")
-            write_ass_file(segments, audio_duration, subs_path)
+            preset = style_preset or getattr(job, "style_preset", None) or "cinematic"
+            write_ass_file(segments, audio_duration, subs_path, style_preset=preset)
 
             # ── 5. Música de fondo (procedural, opcional) ─
             music_path = None
@@ -183,9 +186,26 @@ def process_video_job(job_id: int, voice: str | None = None, visual_style: str =
             job.storage_url = storage_url
             job.duration_seconds = int(audio_duration)
             job.status_detail = "Completed (rendered)"
+            job.published_at = datetime.now(timezone.utc)
             upd.step(100, "Completed", JobStatus.COMPLETED)
 
-            # ── 9. Auto-publicación (F2) ───────────────
+            # ── 9. Webhooks de salida (evento COMPLETED) ──
+            from app.services.webhook_service import EVENT_VIDEO_COMPLETED, dispatch_event
+
+            dispatch_event(EVENT_VIDEO_COMPLETED, {
+                "event": EVENT_VIDEO_COMPLETED,
+                "job_id": job.id,
+                "status": "COMPLETED",
+                "prompt": job.prompt,
+                "content": job.publish_content or job.prompt,
+                "media_url": storage_url or web_path,
+                "public_media_url": f"{settings.public_media_base_url.rstrip('/')}/{web_path}",
+                "duration_seconds": int(audio_duration),
+                "style_preset": preset,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+            # ── 10. Auto-publicación (F2) ───────────────
             if job.auto_publish and job.publish_platforms:
                 try:
                     from app.services.publish_service import do_publish
@@ -209,6 +229,17 @@ def process_video_job(job_id: int, voice: str | None = None, visual_style: str =
         except (TTSError, FFmpegError, Exception) as e:
             job.error = str(e)[:1800]
             upd.step(0, "Failed", JobStatus.FAILED)
+
+            from app.services.webhook_service import EVENT_VIDEO_FAILED, dispatch_event
+
+            dispatch_event(EVENT_VIDEO_FAILED, {
+                "event": EVENT_VIDEO_FAILED,
+                "job_id": job_id,
+                "status": "FAILED",
+                "prompt": getattr(job, "prompt", ""),
+                "error": str(e)[:1500],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
             return {"job_id": job_id, "status": "FAILED", "error": str(e)[:300]}
     finally:
         db.close()

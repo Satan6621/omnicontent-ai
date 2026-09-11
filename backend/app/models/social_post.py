@@ -26,4 +26,8 @@ class SocialPost(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    # ── Content Scheduler ──
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     user: Mapped["User | None"] = relationship(back_populates="posts")

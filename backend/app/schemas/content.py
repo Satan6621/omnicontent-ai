@@ -37,9 +37,13 @@ class VideoCreateRequest(BaseModel):
     voice: str | None = Field(default=None, max_length=60)
     visual_style: str = Field(default="cinematic", max_length=60)
     music_style: str | None = Field(default=None, max_length=20)
+    style_preset: str = Field(default="cinematic", max_length=40)
 
     # F5: script override (para editar antes de render)
     script: str | None = Field(default=None, max_length=10000)
+
+    # F1: render programado
+    scheduled_for: str | None = Field(default=None, max_length=60)
 
     # F2: publicar al completar
     auto_publish: bool = False
@@ -60,6 +64,11 @@ class VideoEditRequest(BaseModel):
     publish_platforms: list[str] | None = None
     publish_content: str | None = None
     publish_hashtags: str | None = None
+    visual_style: str | None = None
+    music_style: str | None = None
+    voice: str | None = None
+    style_preset: str | None = None
+    scheduled_for: str | None = Field(default=None, max_length=60)  # datetime ISO | "" | null
 
 
 class VideoJobResponse(ORMModel):
@@ -76,6 +85,9 @@ class VideoJobResponse(ORMModel):
     error: str | None
     auto_publish: bool
     publish_platforms: list
+    style_preset: str = "cinematic"
+    scheduled_for: datetime | None = None
+    published_at: datetime | None = None
     created_at: datetime
 
 
@@ -178,3 +190,43 @@ class ApiKeyCreateResponse(BaseModel):
     name: str
     scopes: list
     key: str = Field(description="El key completo, solo disponible al crear")
+
+
+# ── Outgoing Webhooks (integración n8n/Make) ───────────────
+WEBHOOK_EVENT_TYPES = [
+    "video.completed",
+    "video.failed",
+    "publish.succeeded",
+    "publish.failed",
+]
+
+
+class WebhookCreateRequest(BaseModel):
+    url: str = Field(min_length=5, max_length=2000)
+    event_type: str = Field(min_length=3, max_length=60)
+    active: bool = True
+    secret: str | None = Field(default=None, max_length=500)
+    headers: dict | None = None
+    description: str = Field(default="", max_length=2000)
+
+
+class WebhookUpdateRequest(BaseModel):
+    url: str | None = Field(default=None, max_length=2000)
+    event_type: str | None = Field(default=None, max_length=60)
+    active: bool | None = None
+    secret: str | None = Field(default=None, max_length=500)
+    headers: dict | None = None
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class WebhookResponse(ORMModel):
+    id: int
+    url: str
+    event_type: str
+    active: bool
+    headers: dict | None
+    description: str
+    last_status: str | None
+    last_sent_at: datetime | None
+    last_error: str | None
+    created_at: datetime
