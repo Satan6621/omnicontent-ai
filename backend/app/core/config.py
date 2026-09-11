@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
 
-    tts_provider: str = "edge-tts"
+    tts_provider: str = "auto"
     tts_voice: str = "es-MX-JorgeNeural"
     elevenlabs_api_key: str = ""
 
