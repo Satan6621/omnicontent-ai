@@ -211,11 +211,11 @@ def process_due_publishes() -> list[int]:
     now = datetime.now(timezone.utc)
     db = SessionLocal()
     try:
-due = db.query(PublishJob).filter(
-        PublishJob.status == "pending",
-        PublishJob.scheduled_at.is_not(None),  # noqa: E711
-        PublishJob.scheduled_at <= now,
-    ).limit(20).all()
+        due = db.query(PublishJob).filter(
+            PublishJob.status == "pending",
+            PublishJob.scheduled_at.is_not(None),  # noqa: E711
+            PublishJob.scheduled_at <= now,
+        ).limit(20).all()
 
         processed_ids = []
         for job in due:
