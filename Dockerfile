@@ -19,10 +19,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ .
 
-# Non-root runtime user
-RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
-
 ENV PORT=8000
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
