@@ -110,9 +110,8 @@ async def retry_publish_job(job_id: int, db: Session = Depends(get_db)):
     if new_job is None:
         raise HTTPException(status_code=400, detail="No hay redes fallidas para reintentar")
 
-    # El job nuevo se creó en una sesión propia; recargarlo con la sesión del endpoint
-    db.expunge(new_job)
-    db.close()
+    # El job nuevo se creó/dio commit en una sesión propia; recargarlo por id con la sesión del endpoint
+    db.rollback()  # reinicia el estado transaccional
     refreshed = db.get(PublishJob, new_job.id)
     if refreshed is None:
         raise HTTPException(status_code=404, detail="Publish job not found")
