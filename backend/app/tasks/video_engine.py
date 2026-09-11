@@ -151,8 +151,18 @@ def process_video_job(job_id: int, voice: str | None = None, visual_style: str =
             # ── 6. Render ──────────────────────────────
             upd.step(80, "Rendering video (FFmpeg)")
             output_path = str(job_dir / f"job_{job_id}.mp4")
-            render_vertical_video(image_paths, audio_path, subs_path, output_path,
-                                   music_path=music_path)
+            low_mem = settings.app_env == "production" or settings.video_low_memory
+            render_width, render_height = (720, 1280) if low_mem else (1080, 1920)
+            render_vertical_video(
+                image_paths,
+                audio_path,
+                subs_path,
+                output_path,
+                width=render_width,
+                height=render_height,
+                music_path=music_path,
+                low_memory=low_mem,
+            )
 
             # ── 7. Complete ────────────────────────────
             job.video_path = output_path

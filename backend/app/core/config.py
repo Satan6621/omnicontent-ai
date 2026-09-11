@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     media_root: str = "media"
     public_media_base_url: str = "http://localhost:8000/media"
     max_upload_mb: int = 10
+    video_low_memory: bool = False
 
     # Puente de publicación → AutoSocial
     autosocial_url: str = "http://localhost:8001"

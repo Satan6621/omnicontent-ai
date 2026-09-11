@@ -47,6 +47,7 @@ def render_vertical_video(
     height: int = 1920,
     music_path: str | None = None,
     music_volume: float = 0.22,
+    low_memory: bool = False,
 ) -> str:
     """Compila imágenes + audio + subtítulos ASS en un MP4 vertical 1080x1920.
 
@@ -98,6 +99,10 @@ def render_vertical_video(
 
     filter_complex = ";".join(filter_parts)
 
+    preset = "veryfast" if low_memory else "medium"
+    crf = "25" if low_memory else "21"
+    threads = "-threads", "1" if low_memory else "-threads", "0"
+
     cmd = ["ffmpeg", "-y"]
     cmd.extend(inputs)
     cmd.extend(["-i", audio_path])
@@ -108,8 +113,9 @@ def render_vertical_video(
         "-map", "[vout]",
         "-map", audio_map,
         "-c:v", "libx264",
-        "-preset", "medium",
-        "-crf", "21",
+        "-preset", preset,
+        "-crf", crf,
+        *threads,
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "160k",
