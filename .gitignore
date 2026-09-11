@@ -31,3 +31,6 @@ backend/media/videos/*
 .DS_Store
 Thumbs.db
 .vercel
+
+# test local ffmpeg
+backend/_fftest/
