@@ -1,10 +1,14 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.enums import JobStatus
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class VideoJob(Base):
@@ -33,4 +37,4 @@ class VideoJob(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    user: Mapped[User | None] = relationship(back_populates="video_jobs")
+    user: Mapped["User | None"] = relationship(back_populates="video_jobs")
