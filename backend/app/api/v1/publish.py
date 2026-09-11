@@ -1,91 +1,131 @@
-import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime
+import asyncio
 
-from app.core.config import get_settings
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import desc, select
+from sqlalchemy.orm import Session
+
 from app.core.security import require_api_key
-from app.schemas import PublishRequest, PublishResponse
+from app.db.session import get_db
+from app.models import PublishJob
+from app.schemas import (
+    PublishJobListResponse,
+    PublishRequest,
+    PublishResponse,
+)
+from app.services import publish_service
 
 router = APIRouter(prefix="/publish", tags=["publish"])
 
-settings = get_settings()
 
+def _parse_scheduled(scheduled_at: str | None) -> datetime | None:
+    """Parsea fecha ISO (p.ej. 2026-09-15T18:30:00Z o -05:00)."""
+    if not scheduled_at:
+        return None
+    try:
+        dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="scheduled_at inválido (usa ISO-8601)")
+    from datetime import timezone
 
-def _autosocial_headers() -> dict:
-    return {
-        "X-API-Key": settings.autosocial_api_key,
-        "Content-Type": "application/json",
-    }
-
-
-def _autosocial_publish_url() -> str:
-    base = settings.autosocial_url.rstrip("/")
-    path = settings.autosocial_publish_path
-    if not path.startswith("/"):
-        path = f"/{path}"
-    return f"{base}{path}"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 @router.post("", response_model=PublishResponse, dependencies=[Depends(require_api_key)])
-async def publish_to_socials(req: PublishRequest):
-    """Publica contenido (texto/imagen/video) en las redes vía la API de AutoSocial."""
-    if not settings.autosocial_api_key or settings.autosocial_api_key.startswith("change-me"):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AUTOSOCIAL_API_KEY no configurada en el backend",
-        )
+async def publish_to_socials(req: PublishRequest, db: Session = Depends(get_db)):
+    """Publica contenido en redes (inmediato o programado) vía AutoSocial.
 
-    # Si el video no tiene URL pública absoluta, convertirla desde la ruta local
-    video_url = req.video_url
-    if video_url and not video_url.startswith("http"):
-        video_url = f"{settings.public_media_base_url.rstrip('/')}/{video_url.replace(chr(92), '/').lstrip('/')}"
+    - scheduled_at presente y futuro → se programa (F1)
+    - sin scheduled_at → publicación inmediata con dedup (E4)
+    """
+    if not req.content.strip():
+        raise HTTPException(status_code=400, detail="content no puede estar vacío")
 
-    content = req.content.strip()
-    if req.hashtags:
-        content = f"{content}\n\n{req.hashtags.strip()}"
+    scheduled = _parse_scheduled(req.scheduled_at)
+    job = await asyncio.to_thread(
+        publish_service.do_publish,
+        content=req.content.strip(),
+        platforms=[p for p in req.platforms],
+        hashtags=req.hashtags,
+        video_url=req.video_url,
+        image_data_uri=req.image_data_uri,
+        scheduled_at=scheduled,
+        source="api",
+    )
 
-    payload: dict = {"content": content, "platforms": req.platforms}
-    if video_url:
-        payload["video_url"] = video_url
-    if req.image_data_uri:
-        payload["image"] = req.image_data_uri
-
-    try:
-        timeout = httpx.Timeout(300.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                _autosocial_publish_url(),
-                headers=_autosocial_headers(),
-                json=payload,
-            )
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"No se pudo contactar AutoSocial: {e}",
-        )
-
-    if resp.status_code == 401:
-        raise HTTPException(status_code=401, detail="AutoSocial rechazó la API key (AUTOSOCIAL_API_KEY)")
-    if resp.status_code != 200:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AutoSocial respondió HTTP {resp.status_code}: {resp.text[:200]}",
-        )
-
-    data = resp.json()
-    results: dict = data.get("results", {})
-
-    errors: list[str] = []
+    # dedup: ya existía → retornarlo como resultado
+    resp_results: dict = job.per_network or {}
+    resp_errors: list[str] = [job.error] if job.error else []
     succeeded = 0
-    for plat, outcome in results.items():
+    for plat, outcome in resp_results.items():
         if isinstance(outcome, dict) and outcome.get("success"):
             succeeded += 1
-        else:
-            msg = outcome.get("error", "error desconocido") if isinstance(outcome, dict) else str(outcome)
-            errors.append(f"{plat}: {msg}")
+    if scheduled:
+        resp_results = {}
+        resp_errors = []
 
     return PublishResponse(
-        results=results,
+        results=resp_results,
         requested=len(req.platforms),
+        succeeded=succeeded if not scheduled else 0,
+        errors=resp_errors,
+        job_id=job.id,
+    )
+
+
+@router.get("/jobs", response_model=PublishJobListResponse, dependencies=[Depends(require_api_key)])
+async def list_publish_jobs(limit: int = 20, offset: int = 0, status_filter: str | None = None,
+                           db: Session = Depends(get_db)):
+    """Historial de publicaciones (F6: analytics, F7: estado por red)."""
+    limit = min(max(limit, 1), 100)
+    q = select(PublishJob)
+    if status_filter:
+        q = q.where(PublishJob.status == status_filter)
+    rows = db.execute(q.order_by(desc(PublishJob.created_at)).limit(limit).offset(offset)).scalars().all()
+    return PublishJobListResponse(jobs=rows, count=len(rows))
+
+
+@router.get("/jobs/{job_id}", response_model=PublishJobListResponse,
+            dependencies=[Depends(require_api_key)])
+async def get_publish_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(PublishJob, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Publish job not found")
+    return PublishJobListResponse(jobs=[job], count=1)
+
+
+@router.post("/jobs/{job_id}/retry", response_model=PublishResponse,
+             status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_api_key)])
+async def retry_publish_job(job_id: int, db: Session = Depends(get_db)):
+    """Reintenta publicaciones fallidas (F7). Solo fallidas o parciales."""
+    job = db.get(PublishJob, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Publish job not found")
+    if job.status not in ("failed", "partial"):
+        raise HTTPException(status_code=409, detail=f"Job {job_id} no es reintentable (status={job.status})")
+
+    new_job = await asyncio.to_thread(publish_service.retry_publish, job_id)
+    if new_job is None:
+        raise HTTPException(status_code=400, detail="No hay redes fallidas para reintentar")
+
+    db.refresh(new_job)
+    results = new_job.per_network or {}
+    succeeded = sum(1 for o in results.values() if isinstance(o, dict) and o.get("success"))
+    errors = [f"{k}: {v.get('error', 'error')}" for k, v in results.items()
+              if isinstance(v, dict) and not v.get("success")]
+    return PublishResponse(
+        results=results,
+        requested=len(new_job.platforms),
         succeeded=succeeded,
         errors=errors,
+        job_id=new_job.id,
     )
+
+
+@router.post("/process-due", response_model=dict, dependencies=[Depends(require_api_key)])
+async def trigger_process_due():
+    """Procesa publicaciones programadas vencidas manualmente (o el worker lo hace solo)."""
+    processed = await asyncio.to_thread(publish_service.process_due_publishes)
+    return {"processed": processed, "count": len(processed)}

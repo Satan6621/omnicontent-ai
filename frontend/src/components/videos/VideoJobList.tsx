@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, RotateCcw } from 'lucide-react';
+import { Download, RotateCcw, Send } from 'lucide-react';
 import { retryVideoJob } from '@/lib/api';
 import { useVideoJobsList } from '@/hooks/useVideoJob';
 import { Badge, Button, Card, CardHeader } from '@/components/ui/primitives';
@@ -47,6 +47,11 @@ export function VideoJobList() {
             <div className="flex items-center gap-2 text-xs text-zinc-500">
               <span>{j.status_detail}</span>
               {j.duration_seconds != null && <span>· {j.duration_seconds}s</span>}
+              {j.auto_publish && (
+                <Badge tone="green">
+                  <Send size={10} /> auto-pub
+                </Badge>
+              )}
               {j.status === 'COMPLETED' && j.video_url && (
                 <a href={j.video_url} download className="ml-auto">
                   <Button variant="ghost" size="sm">

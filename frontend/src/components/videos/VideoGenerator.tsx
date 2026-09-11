@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Clapperboard, Loader2, RotateCcw, Download } from 'lucide-react';
-import { createVideoJob, retryVideoJob } from '@/lib/api';
+import { Clapperboard, Loader2, RotateCcw, Download, PencilLine, Wand2, Send } from 'lucide-react';
+import { createVideoDraft, createVideoJob, editVideoJob, renderVideoJob, retryVideoJob } from '@/lib/api';
 import { useVideoJobPolling } from '@/hooks/useVideoJob';
-import { Button, Card, CardHeader, Input, Progress, Select, Badge } from '@/components/ui/primitives';
-import { SocialPublisher } from '@/components/social/SocialPublisher';
+import { Button, Card, CardHeader, Input, Progress, Select, Badge, Textarea } from '@/components/ui/primitives';
+import { SOCIAL_PLATFORMS, SocialPublisher } from '@/components/social/SocialPublisher';
 
 const VOICES = [
   { id: 'es-MX-JorgeNeural', label: 'Jorge (es-MX)' },
@@ -37,13 +37,22 @@ export function VideoGenerator() {
   const [voice, setVoice] = useState(VOICES[0].id);
   const [style, setStyle] = useState('cinematic');
   const [music, setMusic] = useState('lofi');
+  // F5: draft/edición de script
+  const [draftScript, setDraftScript] = useState('');
+  const [editing, setEditing] = useState(false);
+  // F2: auto-publicar al completar
+  const [autoPublish, setAutoPublish] = useState(false);
+  const [publishNets, setPublishNets] = useState<Record<string, boolean>>({
+    mastodon: true, telegram: true, bluesky: false, instagram: false,
+  });
   const [jobId, setJobId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const { job } = useVideoJobPolling(jobId);
 
-  const generate = async () => {
+  // F5 paso 1: generar solo el guion (sin render)
+  const generateDraft = async () => {
     if (prompt.trim().length < 5) {
       setError('Describe tu video (mínimo 5 caracteres)');
       return;
@@ -51,15 +60,39 @@ export function VideoGenerator() {
     setBusy(true);
     setError('');
     try {
-      const created = await createVideoJob({
-        prompt: prompt.trim(),
-        voice,
-        visual_style: style,
-        music_style: music || null,
-      });
-      setJobId(created.id);
+      const draft = await createVideoDraft({ prompt: prompt.trim() });
+      setDraftScript(draft.script || '');
+      setEditing(true);
+      setJobId(draft.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error creando job');
+      setError(e instanceof Error ? e.message : 'Error generando guion');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // F2 + F5: guardar editado y renderizar
+  const render = async () => {
+    if (!jobId || !draftScript.trim()) {
+      setError('Primero genera el guion');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const nets = Object.entries(publishNets).filter(([, v]) => v).map(([k]) => k);
+    try {
+      await editVideoJob(jobId, {
+        script: draftScript.trim(),
+        auto_publish: autoPublish,
+        publish_platforms: autoPublish ? nets : [],
+        publish_content: prompt.trim(),
+        publish_hashtags: '#shorts #viral',
+      });
+      const r = await renderVideoJob(jobId);
+      setJobId(r.id);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error renderizando');
     } finally {
       setBusy(false);
     }
@@ -85,7 +118,7 @@ export function VideoGenerator() {
     <Card>
       <CardHeader
         title="AI Video Generator"
-        subtitle="Prompt → guion + voz + visuales + subtítulos → MP4 1080×1920"
+        subtitle="Prompt → guion editable → voz + visuales + subtítulos → MP4"
         icon={<Clapperboard size={18} />}
       />
       <div className="space-y-4 p-5">
@@ -95,41 +128,94 @@ export function VideoGenerator() {
             placeholder="Ej: hábitos digitales que te roban tiempo"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !busy && generate()}
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-4">
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-zinc-400">Voz</label>
-            <Select value={voice} onChange={(e) => setVoice(e.target.value)}>
-              {VOICES.map((v) => (
-                <option key={v.id} value={v.id}>{v.label}</option>
-              ))}
-            </Select>
+
+        {!editing ? (
+          <div className="grid gap-3 sm:grid-cols-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Voz</label>
+              <Select value={voice} onChange={(e) => setVoice(e.target.value)}>
+                {VOICES.map((v) => (
+                  <option key={v.id} value={v.id}>{v.label}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Estilo visual</label>
+              <Select value={style} onChange={(e) => setStyle(e.target.value)}>
+                {STYLES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">Música</label>
+              <Select value={music} onChange={(e) => setMusic(e.target.value)}>
+                {MUSIC_STYLES.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex items-end gap-1.5">
+              {/* F5: dos botones — draft para editar, o directo */}
+              <Button onClick={generateDraft} disabled={busy || isRendering} className="w-full">
+                {busy ? <Loader2 size={16} className="animate-spin" /> : <PencilLine size={16} />}
+                Guion & editar
+              </Button>
+            </div>
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-zinc-400">Estilo visual</label>
-            <Select value={style} onChange={(e) => setStyle(e.target.value)}>
-              {STYLES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </Select>
+        ) : (
+          <div className="space-y-3 rounded-lg border border-violet-900/50 bg-violet-950/10 p-4">
+            <div className="flex items-center gap-2">
+              <Wand2 size={14} className="text-violet-400" />
+              <p className="text-xs font-medium text-violet-300">Paso 2 — Revisa y edita el guion antes de renderizar</p>
+            </div>
+            <Textarea
+              rows={6}
+              value={draftScript}
+              onChange={(e) => setDraftScript(e.target.value)}
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm"
+            />
+            {/* F2: auto-publicar al completar */}
+            <label className="flex items-center gap-2 text-xs text-zinc-400">
+              <input
+                type="checkbox"
+                checked={autoPublish}
+                onChange={(e) => setAutoPublish(e.target.checked)}
+                className="accent-violet-500"
+              />
+              Auto-publicar al completar
+            </label>
+            {autoPublish && (
+              <div className="flex flex-wrap gap-1.5">
+                {SOCIAL_PLATFORMS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPublishNets({ ...publishNets, [p.id]: !publishNets[p.id] })}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                      publishNets[p.id]
+                        ? 'border-violet-500 bg-violet-950/60 text-violet-300'
+                        : 'border-zinc-700 bg-zinc-900 text-zinc-500'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={render} disabled={busy || isRendering}>
+                {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                Renderizar video
+              </Button>
+              <Button variant="secondary" onClick={() => { setEditing(false); setDraftScript(''); }}>
+                Cancelar
+              </Button>
+            </div>
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-zinc-400">Música</label>
-            <Select value={music} onChange={(e) => setMusic(e.target.value)}>
-              {MUSIC_STYLES.map((m) => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-              ))}
-            </Select>
-          </div>
-          <div className="flex items-end">
-            <Button onClick={generate} disabled={busy || isRendering} className="w-full">
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Clapperboard size={16} />}
-              Generar video
-            </Button>
-          </div>
-        </div>
+        )}
 
         {error && <p className="text-sm text-red-400">✕ {error}</p>}
 
@@ -140,6 +226,9 @@ export function VideoGenerator() {
               <span className="text-xs text-zinc-500">{job.status_detail}</span>
               {job.duration_seconds != null && (
                 <span className="text-xs text-zinc-500">· {job.duration_seconds}s</span>
+              )}
+              {job.auto_publish && (
+                <Badge tone="green">auto-publicar ON</Badge>
               )}
             </div>
 

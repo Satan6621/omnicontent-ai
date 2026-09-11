@@ -164,11 +164,41 @@ def process_video_job(job_id: int, voice: str | None = None, visual_style: str =
                 low_memory=low_mem,
             )
 
-            # ── 7. Complete ────────────────────────────
+            # ── 7. Persistir media en storage (E2) ─────
+            storage_url = None
+            try:
+                from app.services.storage_service import upload_file_to_storage
+                storage_url = upload_file_to_storage(output_path, "video/mp4")
+            except Exception:
+                storage_url = None
+
+            # ── 8. Complete ────────────────────────────
             job.video_path = output_path
+            job.storage_url = storage_url
             job.duration_seconds = int(audio_duration)
+            job.status_detail = "Completed"
             upd.step(100, "Completed", JobStatus.COMPLETED)
-            return {"job_id": job_id, "status": "COMPLETED", "video_path": output_path}
+
+            # ── 9. Auto-publicación (F2) ───────────────
+            if job.auto_publish and job.publish_platforms:
+                try:
+                    from app.services.publish_service import do_publish
+
+                    content = (job.publish_content or job.prompt).strip()
+                    do_publish(
+                        content=content,
+                        platforms=list(job.publish_platforms),
+                        hashtags=job.publish_hashtags or "",
+                        video_url=storage_url or output_path,
+                        source="video_job",
+                    )
+                    upd.step(100, "Completed + published to " + ", ".join(job.publish_platforms),
+                             JobStatus.COMPLETED)
+                except Exception:
+                    pass  # el auto-publish es best-effort
+
+            return {"job_id": job_id, "status": "COMPLETED", "video_path": output_path,
+                    "storage_url": storage_url}
 
         except (TTSError, FFmpegError, Exception) as e:
             job.error = str(e)[:1800]

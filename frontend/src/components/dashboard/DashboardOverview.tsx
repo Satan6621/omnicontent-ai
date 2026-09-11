@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FileText, Video, Activity, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { FileText, Video, Activity, CheckCircle2, XCircle, Clock, Send } from 'lucide-react';
 import { getDashboardStats, listPosts } from '@/lib/api';
 import type { DashboardStats, SocialPost } from '@/types/api';
 import { Card, CardHeader, Badge } from '@/components/ui/primitives';
@@ -52,7 +52,7 @@ export function DashboardOverview() {
         <StatCard icon={<FileText size={20} />} label="Posts generados" value={stats.total_posts} accent="bg-fuchsia-950 text-fuchsia-400" />
         <StatCard icon={<Video size={20} />} label="Videos totales" value={stats.total_videos} />
         <StatCard icon={<CheckCircle2 size={20} />} label="Videos completados" value={stats.videos_completed} accent="bg-emerald-950 text-emerald-400" />
-        <StatCard icon={<Clock size={20} />} label="Últimos 7 días" value={`${stats.posts_last_7_days} posts · ${stats.videos_last_7_days} videos`} accent="bg-amber-950 text-amber-400" />
+        <StatCard icon={<Send size={20} />} label="Últimos 7 días" value={`${stats.posts_last_7_days} posts · ${stats.videos_last_7_days} videos · ${stats.publishes_last_7_days} pubs`} accent="bg-amber-950 text-amber-400" />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

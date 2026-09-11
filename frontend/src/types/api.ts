@@ -1,5 +1,7 @@
 export type JobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
+export type PublishStatus = 'pending' | 'processing' | 'published' | 'partial' | 'failed' | 'cancelled';
+
 export interface SocialPost {
   id: number;
   topic: string;
@@ -30,8 +32,11 @@ export interface VideoJob {
   status_detail: string;
   video_path: string | null;
   video_url: string | null;
+  storage_url: string | null;
   duration_seconds: number | null;
   error: string | null;
+  auto_publish: boolean;
+  publish_platforms: string[];
   created_at: string;
 }
 
@@ -45,6 +50,23 @@ export interface VideoCreateRequest {
   voice?: string;
   visual_style?: string;
   music_style?: string | null;
+  script?: string | null;
+  auto_publish?: boolean;
+  publish_platforms?: string[];
+  publish_content?: string;
+  publish_hashtags?: string;
+}
+
+export interface VideoEditRequest {
+  script?: string;
+  auto_publish?: boolean;
+  publish_platforms?: string[];
+  publish_content?: string;
+  publish_hashtags?: string;
+}
+
+export interface VideoScriptRequest {
+  prompt: string;
 }
 
 export interface PublishRequest {
@@ -52,6 +74,8 @@ export interface PublishRequest {
   platforms: string[];
   hashtags?: string;
   video_url?: string | null;
+  image_data_uri?: string | null;
+  scheduled_at?: string | null;
 }
 
 export interface PublishResponse {
@@ -59,6 +83,27 @@ export interface PublishResponse {
   requested: number;
   succeeded: number;
   errors: string[];
+  job_id?: number | null;
+}
+
+export interface PublishJob {
+  id: number;
+  content: string;
+  platforms: string[];
+  hashtags: string;
+  video_url: string | null;
+  status: PublishStatus;
+  per_network: Record<string, { success: boolean; url?: string; error?: string }> | null;
+  error: string | null;
+  scheduled_at: string | null;
+  published_at: string | null;
+  source: string;
+  created_at: string;
+}
+
+export interface PublishJobListResponse {
+  jobs: PublishJob[];
+  count: number;
 }
 
 export interface DashboardStats {
@@ -69,4 +114,58 @@ export interface DashboardStats {
   videos_failed: number;
   posts_last_7_days: number;
   videos_last_7_days: number;
+  publishes_last_7_days: number;
+}
+
+export interface PlatformAnalytics {
+  total_published: number;
+  total_succeeded: number;
+  total_failed: number;
+  per_platform: Record<string, { published: number; failed: number; last: string | null }>;
+  engagement: AnalyticsItem[];
+}
+
+export interface AnalyticsItem {
+  id?: number;
+  content?: string;
+  published_at?: string;
+  metrics?: {
+    likes: number;
+    reposts: number;
+    replies: number;
+    url?: string | null;
+  };
+  platform?: string;
+  url?: string;
+  likes?: number;
+  reposts?: number;
+  replies?: number;
+}
+
+export interface AnalyticsResponse {
+  period_days: number;
+  publish_summary: PlatformAnalytics;
+  top_posts: PublishJob[];
+}
+
+export interface ApiKeyResponse {
+  id: number;
+  name: string;
+  scopes: string[];
+  active: boolean;
+  created_at: string;
+  last_used_at: string | null;
+  key_preview: string;
+}
+
+export interface ApiKeyCreateResponse {
+  id: number;
+  name: string;
+  scopes: string[];
+  key: string;
+}
+
+export interface ApiKeyCreateRequest {
+  name: string;
+  scopes?: string[];
 }

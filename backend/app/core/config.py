@@ -48,10 +48,22 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     video_low_memory: bool = False
 
+    # Persistencia de media (Supabase Storage o S3-compatible opcional)
+    supabase_url: str = ""
+    supabase_key: str = ""
+    supabase_bucket: str = "omnicontent-media"
+    storage_public_base: str = ""  # si se setea, ganará a public_media_base_url en las URLs
+
     # Puente de publicación → AutoSocial
     autosocial_url: str = "http://localhost:8001"
     autosocial_publish_path: str = "/publish"
     autosocial_api_key: str = "change-me-autosocial-key"
+    autosocial_schedule_path: str = "/schedule"
+    autosocial_engagement_path: str = "/engagement"
+
+    # Monitoreo
+    sentry_dsn: str = ""
+    log_json: bool = False
 
     @property
     def cors_origins(self) -> list[str]:

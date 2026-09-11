@@ -1,13 +1,20 @@
 import type {
+  AnalyticsResponse,
+  ApiKeyCreateRequest,
+  ApiKeyCreateResponse,
+  ApiKeyResponse,
   DashboardStats,
   PostCreateRequest,
   PostListResponse,
+  PublishJobListResponse,
   PublishRequest,
   PublishResponse,
   SocialPost,
   VideoCreateRequest,
+  VideoEditRequest,
   VideoJob,
   VideoJobListResponse,
+  VideoScriptRequest,
 } from '@/types/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -59,6 +66,19 @@ export async function retryVideoJob(id: number): Promise<VideoJob> {
   return request<VideoJob>(`/videos/${id}/retry`, { method: 'POST' });
 }
 
+// ── F5: draft mode + edit ─────────────────────────────────
+export async function createVideoDraft(req: VideoScriptRequest): Promise<VideoJob> {
+  return request<VideoJob>('/videos/draft', { method: 'POST', body: JSON.stringify(req) });
+}
+
+export async function editVideoJob(id: number, req: VideoEditRequest): Promise<VideoJob> {
+  return request<VideoJob>(`/videos/${id}/edit`, { method: 'POST', body: JSON.stringify(req) });
+}
+
+export async function renderVideoJob(id: number): Promise<VideoJob> {
+  return request<VideoJob>(`/videos/${id}/render`, { method: 'POST' });
+}
+
 // ── Dashboard ─────────────────────────────────────────────
 export async function getDashboardStats(): Promise<DashboardStats> {
   return request<DashboardStats>('/dashboard/stats');
@@ -67,4 +87,30 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 // ── Publicación (puente a AutoSocial) ─────────────────────
 export async function publishContent(req: PublishRequest): Promise<PublishResponse> {
   return request<PublishResponse>('/publish', { method: 'POST', body: JSON.stringify(req) });
+}
+
+export async function listPublishJobs(limit = 30): Promise<PublishJobListResponse> {
+  return request<PublishJobListResponse>(`/publish/jobs?limit=${limit}`);
+}
+
+export async function retryPublishJob(id: number): Promise<PublishResponse> {
+  return request<PublishResponse>(`/publish/jobs/${id}/retry`, { method: 'POST' });
+}
+
+// ── Analytics (F6) ────────────────────────────────────────
+export async function getAnalytics(periodDays = 7): Promise<AnalyticsResponse> {
+  return request<AnalyticsResponse>(`/analytics?period_days=${periodDays}`);
+}
+
+// ── API Keys multi-cliente (E5) ───────────────────────────
+export async function listApiKeys(): Promise<ApiKeyResponse[]> {
+  return request<ApiKeyResponse[]>('/apikeys');
+}
+
+export async function createApiKey(req: ApiKeyCreateRequest): Promise<ApiKeyCreateResponse> {
+  return request<ApiKeyCreateResponse>('/apikeys', { method: 'POST', body: JSON.stringify(req) });
+}
+
+export async function deleteApiKey(id: number): Promise<void> {
+  await request<unknown>(`/apikeys/${id}`, { method: 'DELETE' });
 }

@@ -22,6 +22,7 @@ const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/posts", label: "Posts" },
   { href: "/videos", label: "Videos" },
+  { href: "/analytics", label: "Analytics" },
 ];
 
 export default function RootLayout({

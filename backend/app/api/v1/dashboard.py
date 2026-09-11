@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import require_api_key
 from app.db.session import get_db
-from app.models import JobStatus, SocialPost, VideoJob
+from app.models import JobStatus, PublishJob, SocialPost, VideoJob
 from app.schemas import DashboardStats
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -33,6 +33,12 @@ async def get_stats(db: Session = Depends(get_db)):
     videos_week = db.execute(
         select(func.count(VideoJob.id)).where(VideoJob.created_at >= week_ago)
     ).scalar_one()
+    publishes_week = db.execute(
+        select(func.count(PublishJob.id)).where(
+            PublishJob.created_at >= week_ago,
+            PublishJob.status.notin_(["cancelled"]),
+        )
+    ).scalar_one()
 
     return DashboardStats(
         total_posts=total_posts,
@@ -42,4 +48,5 @@ async def get_stats(db: Session = Depends(get_db)):
         videos_failed=failed,
         posts_last_7_days=posts_week,
         videos_last_7_days=videos_week,
+        publishes_last_7_days=publishes_week,
     )

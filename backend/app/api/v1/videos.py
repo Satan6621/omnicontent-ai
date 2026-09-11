@@ -8,7 +8,14 @@ from app.core.config import get_settings
 from app.core.security import require_api_key
 from app.db.session import get_db
 from app.models import JobStatus, VideoJob
-from app.schemas import VideoCreateRequest, VideoJobListResponse, VideoJobResponse
+from app.schemas import (
+    VideoCreateRequest,
+    VideoEditRequest,
+    VideoJobListResponse,
+    VideoJobResponse,
+    VideoScriptRequest,
+)
+from app.services.script_service import generate_script
 from app.tasks.video_tasks import generate_ai_video_task
 
 router = APIRouter(prefix="/videos", tags=["videos"])
@@ -18,13 +25,14 @@ settings = get_settings()
 
 def _to_response(job: VideoJob) -> VideoJobResponse:
     resp = VideoJobResponse.model_validate(job)
-    if job.video_path and job.status == JobStatus.COMPLETED:
+    if job.storage_url and job.status == JobStatus.COMPLETED:
+        resp.video_url = job.storage_url
+    elif job.video_path and job.status == JobStatus.COMPLETED:
         norm = job.video_path.replace("\\", "/")
-        # video_path puede ser "media/videos/job_X/job_X.mp4" → servir desde /media/**
         if norm.startswith(f"{settings.media_root}/"):
             rel = norm[len(f"{settings.media_root}/"):]
         else:
-            rel = "/".join(norm.split("/")[-2:])  # job_X/job_X.mp4
+            rel = "/".join(norm.split("/")[-2:])
         resp.video_url = f"{settings.public_media_base_url}/{rel}"
     return resp
 
@@ -32,7 +40,20 @@ def _to_response(job: VideoJob) -> VideoJobResponse:
 @router.post("", response_model=VideoJobResponse, status_code=status.HTTP_202_ACCEPTED,
              dependencies=[Depends(require_api_key)])
 async def create_video_job(req: VideoCreateRequest, db: Session = Depends(get_db)):
-    job = VideoJob(prompt=req.prompt, status=JobStatus.PENDING, status_detail="Queued")
+    """Crea un job de video. Si `script` viene, se usa directamente (F5)."""
+    if req.script is not None and not req.script.strip():
+        raise HTTPException(status_code=400, detail="script no puede estar vacío")
+
+    job = VideoJob(
+        prompt=req.prompt,
+        script=req.script or "",
+        status=JobStatus.PENDING,
+        status_detail="Queued",
+        auto_publish=req.auto_publish,
+        publish_platforms=list(req.publish_platforms),
+        publish_content=req.publish_content,
+        publish_hashtags=req.publish_hashtags,
+    )
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -46,6 +67,60 @@ async def create_video_job(req: VideoCreateRequest, db: Session = Depends(get_db
         }
     )
     job.celery_task_id = task.id
+    db.commit()
+    db.refresh(job)
+    return _to_response(job)
+
+
+# ── F5: draft mode — genera SOLO el script, sin render ──
+@router.post("/draft", response_model=VideoJobResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_api_key)])
+async def create_draft(req: VideoScriptRequest, db: Session = Depends(get_db)):
+    """Genera el script/editado, sin ejecutar el pipeline de render. Luego el editor
+    del frontend ajusta el texto y llama POST /videos con `script` para renderizar."""
+    try:
+        script = await generate_script(req.prompt)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"No se pudo generar el script: {e}")
+
+    job = VideoJob(
+        prompt=req.prompt,
+        script=script,
+        status=JobStatus.PENDING,
+        status_detail="Script ready (edit before render)",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return _to_response(job)
+
+
+# ── F5: editar script/job antes de renderizar ──
+@router.post("/{job_id}/edit", response_model=VideoJobResponse,
+             dependencies=[Depends(require_api_key)])
+async def edit_video_job(job_id: int, req: VideoEditRequest, db: Session = Depends(get_db)):
+    job = db.get(VideoJob, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video job not found")
+    if job.status not in (JobStatus.PENDING, JobStatus.FAILED):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"No se puede editar un job en estado {job.status.value}",
+        )
+
+    if req.script is not None:
+        if not req.script.strip():
+            raise HTTPException(status_code=400, detail="script no puede estar vacío")
+        job.script = req.script
+    if req.auto_publish is not None:
+        job.auto_publish = req.auto_publish
+    if req.publish_platforms is not None:
+        job.publish_platforms = list(req.publish_platforms)
+    if req.publish_content is not None:
+        job.publish_content = req.publish_content
+    if req.publish_hashtags is not None:
+        job.publish_hashtags = req.publish_hashtags
+    job.status_detail = "Edited, ready to render"
     db.commit()
     db.refresh(job)
     return _to_response(job)
@@ -70,6 +145,36 @@ async def get_video_job(job_id: int, db: Session = Depends(get_db)):
     return _to_response(job)
 
 
+# ── F5: disparar render de un job ya con script (draft → render) ──
+@router.post("/{job_id}/render", response_model=VideoJobResponse,
+             status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_api_key)])
+async def render_video_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(VideoJob, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video job not found")
+    if not job.script or not job.script.strip():
+        raise HTTPException(status_code=400, detail="El job no tiene script; edítalo primero")
+    if job.status not in (JobStatus.PENDING, JobStatus.FAILED):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"No se puede renderizar un job en estado {job.status.value}",
+        )
+
+    job.status = JobStatus.PENDING
+    job.progress = 0
+    job.status_detail = "Queued for render"
+    job.error = None
+    db.commit()
+
+    task = generate_ai_video_task.apply_async(
+        kwargs={"job_id": job.id, "visual_style": "cinematic"}
+    )
+    job.celery_task_id = task.id
+    db.commit()
+    db.refresh(job)
+    return _to_response(job)
+
+
 @router.post("/{job_id}/retry", response_model=VideoJobResponse,
              status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_api_key)])
 async def retry_video_job(job_id: int, db: Session = Depends(get_db)):
@@ -88,7 +193,7 @@ async def retry_video_job(job_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     task = generate_ai_video_task.apply_async(
-        kwargs={"job_id": job.id, "voice": None, "visual_style": "cinematic"}
+        kwargs={"job_id": job.id, "visual_style": "cinematic"}
     )
     job.celery_task_id = task.id
     db.commit()
