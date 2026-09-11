@@ -56,6 +56,8 @@ def do_publish(
     try:
         # ── dedup (E4) ──
         dedupe_key = _make_dedupe_key(content, platforms, video_url)
+        if retry_of:
+            dedupe_key = None  # UNIQUE en DB: cada retry es un intento nuevo
         if dedupe_key and not retry_of:
             existing = db.query(PublishJob).filter(
                 PublishJob.dedupe_key == dedupe_key,
