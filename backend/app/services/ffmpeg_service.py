@@ -16,7 +16,14 @@ def _run(cmd: list[str]) -> None:
         errors="replace",
     )
     if proc.returncode != 0:
-        raise FFmpegError(f"FFmpeg falló (rc={proc.returncode}): {proc.stderr[-800:]}")
+        # Persiste el stderr completo para diagnóstico
+        try:
+            log_dir = Path("media/logs")
+            log_dir.mkdir(parents=True, exist_ok=True)
+            (log_dir / "ffmpeg_latest.log").write_text(proc.stderr or "", encoding="utf-8")
+        except Exception:
+            pass
+        raise FFmpegError(f"FFmpeg falló (rc={proc.returncode}): {proc.stderr[:1500]}")
 
 
 def probe_duration_seconds(path: str) -> float:
