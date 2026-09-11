@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     # Puente de publicación → AutoSocial
     autosocial_url: str = "http://localhost:8001"
+    autosocial_publish_path: str = "/publish"
     autosocial_api_key: str = "change-me-autosocial-key"
 
     @property

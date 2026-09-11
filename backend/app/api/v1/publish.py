@@ -19,7 +19,10 @@ def _autosocial_headers() -> dict:
 
 def _autosocial_publish_url() -> str:
     base = settings.autosocial_url.rstrip("/")
-    return f"{base}/publish"
+    path = settings.autosocial_publish_path
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{base}{path}"
 
 
 @router.post("", response_model=PublishResponse, dependencies=[Depends(require_api_key)])
