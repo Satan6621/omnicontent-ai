@@ -62,7 +62,8 @@ async def get_analytics(period_days: int = 7, db: Session = Depends(get_db)):
             with httpx.Client(timeout=timeout) as client:
                 resp = client.get(url, headers={"X-API-Key": settings.autosocial_api_key})
             if resp.status_code == 200:
-                engagement = resp.json().get("engagement", [])
+                body = resp.json()
+                engagement = body.get("engagement") or body.get("items") or []
         except Exception:
             pass
     summary.engagement = engagement
